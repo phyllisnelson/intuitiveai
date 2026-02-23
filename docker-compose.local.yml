@@ -1,0 +1,58 @@
+---
+# docker-compose.local.yml — local development override
+#
+# Run alongside docker-compose.yml to start the API against the
+# MockOpenStackService — no OpenStack credentials required.
+# Shares the redis service and api-net network from docker-compose.yml.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build redis api
+#   open http://localhost:8000/docs
+#
+# This file must NEVER be used in staging or production.
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8085:8080"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    networks:
+      - api-net
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+      target: local
+    image: vm-lifecycle-api:local
+    environment:
+      LOG_LEVEL: "${LOG_LEVEL:-DEBUG}"
+      API_KEY: "${API_KEY:-changeme}"
+      # Keycloak — container-internal URL (host uses http://localhost:8085)
+      KEYCLOAK_URL: "http://keycloak:8080"
+      KEYCLOAK_REALM: "${KEYCLOAK_REALM:-vm-api}"
+      KEYCLOAK_CLIENT_ID: "${KEYCLOAK_CLIENT_ID:-vm-api}"
+      KEYCLOAK_CLIENT_SECRET: "${KEYCLOAK_CLIENT_SECRET:-changeme}"
+      # OpenStack vars are ignored by the mock but required by pydantic-settings.
+      OPENSTACK_AUTH_URL: "http://mock.local/v3"
+      OPENSTACK_USERNAME: "local-dev"
+      OPENSTACK_PASSWORD: "local-dev"
+      OPENSTACK_PROJECT_NAME: "local"
+      OPENSTACK_REGION_NAME: "RegionOne"
+    # Override the Dockerfile CMD to enable hot-reload.
+    command: ["uvicorn", "tests.local.app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    # Run as root for local dev to allow VSCode to attach and write to volumes.
+    user: root
+    volumes:
+      # Bind-mount source — uvicorn --reload watches these for changes.
+      - ./app:/app/app
+      - ./tests:/app/tests
+      - ./scripts:/app/scripts
+    restart: "no"

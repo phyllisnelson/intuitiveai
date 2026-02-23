@@ -1,0 +1,41 @@
+# ── Dockerfile.local — local development only ─────────────────────────────────
+#
+# Builds the mock-backend image used by docker-compose.local.yml.
+# Identical to the production builder but installs all dependency groups
+# (including dev tools) and copies the tests/ tree so the MockOpenStackService
+# is available at runtime.
+#
+# docker-compose.local.yml bind-mounts ./app and ./tests over the COPY'd
+# directories, so hot-reload (uvicorn --reload) picks up changes instantly.
+#
+# This file must NEVER be used in staging or production.
+
+# ── Stage 1: dependency builder ───────────────────────────────────────────────
+FROM python:3.11-slim AS builder
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+WORKDIR /app
+
+# Install all groups (dev tools needed for the mock app imports).
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project --all-groups
+
+# ── Stage 2: local runtime ────────────────────────────────────────────────────
+FROM python:3.11-slim AS local
+
+WORKDIR /app
+
+COPY --from=builder /app/.venv /app/.venv
+COPY app/ ./app/
+COPY tests/ ./tests/
+COPY scripts/ ./scripts/
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+EXPOSE 8000
+
+# docker-compose.local.yml overrides this CMD with --reload and mounts source.
+CMD ["uvicorn", "tests.local.app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

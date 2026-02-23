@@ -1,0 +1,1019 @@
+{
+  "info": {
+    "name": "VM Lifecycle API",
+    "description": "Full test suite for the VM Lifecycle API.\n\nAuth: set `api_key` for X-API-Key, or set `bearer_token` for Keycloak OIDC Bearer auth. At least one must be configured on the server.\n\nBackground operations (create VM, delete VM, resize VM) are processed by the arq worker. In local/mock mode the mock service handles them in-process. Poll `GET /api/v1/tasks/{task_id}` to track completion.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "description": "Base URL of the running API"
+    },
+    {
+      "key": "api_key",
+      "value": "changeme",
+      "description": "Value for the X-API-Key header (static key auth). Matches API_KEY in .env \u2014 update if you changed it."
+    },
+    {
+      "key": "vm_id",
+      "value": "",
+      "description": "Populated automatically by the Create VM test"
+    },
+    {
+      "key": "task_id",
+      "value": "",
+      "description": "Populated automatically by async operations"
+    },
+    {
+      "key": "flavor_id",
+      "value": "",
+      "description": "Populated automatically by List Flavors test"
+    },
+    {
+      "key": "image_id",
+      "value": "",
+      "description": "Populated automatically by List Images test"
+    },
+    {
+      "key": "seeded_active_vm_1",
+      "value": "",
+      "description": "First ACTIVE VM \u2014 populated by List VMs. Used for Console URL and Reboot."
+    },
+    {
+      "key": "seeded_active_vm_2",
+      "value": "",
+      "description": "Second ACTIVE VM \u2014 populated by List VMs. Used for Stop and Snapshot."
+    },
+    {
+      "key": "seeded_shutoff_vm",
+      "value": "",
+      "description": "First SHUTOFF VM \u2014 populated by List VMs. Used for Start and Resize."
+    }
+  ],
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-Key"
+      },
+      {
+        "key": "value",
+        "value": "{{api_key}}"
+      },
+      {
+        "key": "in",
+        "value": "header"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Setup",
+      "description": "Run once before all other requests to seed the mock with factory_boy data.\n\nSaves seeded_active_vm_1, seeded_active_vm_2, seeded_shutoff_vm, flavor_id, image_id.",
+      "item": [
+        {
+          "name": "Seed Mock",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('saves seeded resource IDs', () => {",
+                  "    const body = pm.response.json();",
+                  "    const active = body.vms.active;",
+                  "    const shutoff = body.vms.shutoff;",
+                  "    if (active.length >= 1) pm.collectionVariables.set('seeded_active_vm_1', active[0]);",
+                  "    if (active.length >= 2) pm.collectionVariables.set('seeded_active_vm_2', active[1]);",
+                  "    if (shutoff.length >= 1) pm.collectionVariables.set('seeded_shutoff_vm', shutoff[0]);",
+                  "    if (body.flavors.length > 0) pm.collectionVariables.set('flavor_id', body.flavors[0]);",
+                  "    if (body.images.length > 0) pm.collectionVariables.set('image_id', body.images[0]);",
+                  "    console.log('seeded_active_vm_1:', active[0]);",
+                  "    console.log('seeded_active_vm_2:', active[1]);",
+                  "    console.log('seeded_shutoff_vm:', shutoff[0]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dev/seed",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "dev",
+                "seed"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Health Check (liveness)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is ok', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.eql('ok');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Readiness Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('ready field present', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('ready');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/ready",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "ready"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Images",
+      "item": [
+        {
+          "name": "List Images",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('returns paginated list', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('data');",
+                  "    pm.expect(body.data).to.be.an('array');",
+                  "    pm.expect(body).to.have.property('total');",
+                  "});",
+                  "pm.test('saves first image_id', () => {",
+                  "    const body = pm.response.json();",
+                  "    if (body.data.length > 0) {",
+                  "        pm.collectionVariables.set('image_id', body.data[0].id);",
+                  "        console.log('Saved image_id:', body.data[0].id);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/images",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "images"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Flavors",
+      "item": [
+        {
+          "name": "List Flavors",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('returns paginated list', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('data');",
+                  "    pm.expect(body.data).to.be.an('array');",
+                  "    pm.expect(body).to.have.property('total');",
+                  "});",
+                  "pm.test('saves first flavor_id', () => {",
+                  "    const body = pm.response.json();",
+                  "    if (body.data.length > 0) {",
+                  "        pm.collectionVariables.set('flavor_id', body.data[0].id);",
+                  "        console.log('Saved flavor_id:', body.data[0].id);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/flavors",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "flavors"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "VMs",
+      "item": [
+        {
+          "name": "List VMs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('returns paginated list', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('data');",
+                  "    pm.expect(body.data).to.be.an('array');",
+                  "    pm.expect(body).to.have.property('total');",
+                  "    pm.expect(body).to.have.property('page');",
+                  "    pm.expect(body).to.have.property('page_size');",
+                  "});",
+                  "pm.test('saves seeded VM IDs for action tests', () => {",
+                  "    const body = pm.response.json();",
+                  "    const activeVms = body.data.filter(v => v.status === 'ACTIVE');",
+                  "    const shutoffVms = body.data.filter(v => v.status === 'SHUTOFF');",
+                  "    // Always reset so stale values from previous runs don't persist.",
+                  "    pm.collectionVariables.set('seeded_active_vm_1', '');",
+                  "    pm.collectionVariables.set('seeded_active_vm_2', '');",
+                  "    pm.collectionVariables.set('seeded_shutoff_vm', '');",
+                  "    if (activeVms.length >= 1) {",
+                  "        pm.collectionVariables.set('seeded_active_vm_1', activeVms[0].id);",
+                  "        console.log('seeded_active_vm_1:', activeVms[0].id);",
+                  "    }",
+                  "    if (activeVms.length >= 2) {",
+                  "        pm.collectionVariables.set('seeded_active_vm_2', activeVms[1].id);",
+                  "        console.log('seeded_active_vm_2:', activeVms[1].id);",
+                  "    }",
+                  "    if (shutoffVms.length >= 1) {",
+                  "        pm.collectionVariables.set('seeded_shutoff_vm', shutoffVms[0].id);",
+                  "        console.log('seeded_shutoff_vm:', shutoffVms[0].id);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/vms?limit=50&offset=0",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "vms"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                },
+                {
+                  "key": "status",
+                  "value": "ACTIVE",
+                  "disabled": true
+                },
+                {
+                  "key": "name",
+                  "value": "test-vm",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create VM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => pm.response.to.have.status(202));",
+                  "pm.test('returns task_id and vm_id', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('data');",
+                  "    pm.expect(body.data).to.have.property('task_id');",
+                  "    pm.expect(body).to.have.property('meta');",
+                  "    pm.expect(body.meta).to.have.property('vm_id');",
+                  "});",
+                  "pm.test('saves vm_id and task_id', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.collectionVariables.set('vm_id', body.meta.vm_id);",
+                  "    pm.collectionVariables.set('task_id', body.data.task_id);",
+                  "    console.log('Saved vm_id:', body.meta.vm_id);",
+                  "    console.log('Saved task_id:', body.data.task_id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"test-vm-postman\",\n  \"flavor_id\": \"{{flavor_id}}\",\n  \"image_id\": \"{{image_id}}\",\n  \"network_id\": null,\n  \"key_name\": null,\n  \"user_data\": null,\n  \"metadata\": {\n    \"created_by\": \"postman-tests\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/vms",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "vms"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get VM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('returns VM data', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('data');",
+                  "    pm.expect(body.data).to.have.property('id');",
+                  "    pm.expect(body.data).to.have.property('name');",
+                  "    pm.expect(body.data).to.have.property('status');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/vms/{{vm_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "vms",
+                "{{vm_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get VM - Not Found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/vms/nonexistent-vm-id-00000000",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "vms",
+                "nonexistent-vm-id-00000000"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "VM Actions",
+      "description": "Uses pre-seeded VMs (populated by List VMs) to guarantee correct initial state.\n\nseeded_active_vm_1 \u2192 Console URL, Reboot\nseeded_active_vm_2 \u2192 Stop, Snapshot\nseeded_shutoff_vm  \u2192 Start, Resize\nvm_id (created VM) \u2192 Delete",
+      "item": [
+        {
+          "name": "Get Console URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('returns console url', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data).to.have.property('url');",
+                  "    pm.expect(body.data).to.have.property('type');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/vms/{{seeded_active_vm_1}}/console?console_type=novnc",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "vms",
+                "{{seeded_active_vm_1}}",
+                "console"
+              ],
+              "query": [
+                {
+                  "key": "console_type",
+                  "value": "novnc"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Power Action - Reboot",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => pm.response.to.have.status(202));",
+                  "pm.test('action accepted', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data.accepted).to.be.true;",
+                  "    pm.expect(body.data.action).to.eql('reboot');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"reboot\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/vms/{{seeded_active_vm_1}}/actions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "vms",
+                "{{seeded_active_vm_1}}",
+                "actions"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Snapshot",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => pm.response.to.have.status(202));",
+                  "pm.test('returns task_id', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data).to.have.property('task_id');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"postman-snapshot\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/vms/{{seeded_active_vm_2}}/snapshots",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "vms",
+                "{{seeded_active_vm_2}}",
+                "snapshots"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Power Action - Stop",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => pm.response.to.have.status(202));",
+                  "pm.test('action accepted', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data.accepted).to.be.true;",
+                  "    pm.expect(body.data.action).to.eql('stop');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"stop\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/vms/{{seeded_active_vm_2}}/actions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "vms",
+                "{{seeded_active_vm_2}}",
+                "actions"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Power Action - Start",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => pm.response.to.have.status(202));",
+                  "pm.test('action accepted', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data.accepted).to.be.true;",
+                  "    pm.expect(body.data.action).to.eql('start');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"start\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/vms/{{seeded_shutoff_vm}}/actions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "vms",
+                "{{seeded_shutoff_vm}}",
+                "actions"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Resize VM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => pm.response.to.have.status(202));",
+                  "pm.test('returns task_id', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data).to.have.property('task_id');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flavor_id\": \"{{flavor_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/vms/{{seeded_shutoff_vm}}/resize",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "vms",
+                "{{seeded_shutoff_vm}}",
+                "resize"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete VM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => pm.response.to.have.status(202));",
+                  "pm.test('returns task_id', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('data');",
+                  "    pm.expect(body.data).to.have.property('task_id');",
+                  "});",
+                  "pm.test('saves delete task_id', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.collectionVariables.set('task_id', body.data.task_id);",
+                  "    console.log('Delete task_id:', body.data.task_id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/vms/{{vm_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "vms",
+                "{{vm_id}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tasks",
+      "item": [
+        {
+          "name": "Poll Task",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('task has required fields', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data).to.have.property('task_id');",
+                  "    pm.expect(body.data).to.have.property('status');",
+                  "    pm.expect(['pending', 'running', 'success', 'failed'])",
+                  "        .to.include(body.data.status);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/tasks/{{task_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tasks",
+                "{{task_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Poll Task (Wait for Completion)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const status = body.data.status;",
+                  "pm.test('task has valid status', () => {",
+                  "    pm.expect(['pending', 'running', 'success', 'failed']).to.include(status);",
+                  "});",
+                  "console.log('Task status:', status, body.data.task_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/tasks/{{task_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tasks",
+                "{{task_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Poll Task - Not Found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/tasks/nonexistent-task-id-00000000",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tasks",
+                "nonexistent-task-id-00000000"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Valid API Key - 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Valid API key is accepted', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/vms",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "vms"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Wrong API Key - 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Wrong API key is rejected', () => {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "wrong-key-12345"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/vms",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "vms"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Missing credentials - 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Missing credentials returns 401', () => {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/vms",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "vms"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

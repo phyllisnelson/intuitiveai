@@ -1,0 +1,73 @@
+---
+# docker-compose.yml — VM Lifecycle API
+# Usage:
+#   cp .env.example .env          # fill in OpenStack credentials
+#   docker compose up --build
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: api-redis
+    restart: unless-stopped
+    networks:
+      - api-net
+
+  api:
+    build:
+      context: .
+      target: runtime
+    image: vm-lifecycle-api:latest
+    container_name: vm-lifecycle-api
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      API_KEY: "${API_KEY:-}"
+      REDIS_URL: "redis://redis:6379"
+      TASK_TTL_SECONDS: "${TASK_TTL_SECONDS:-86400}"
+      OPENSTACK_AUTH_URL: "${OPENSTACK_AUTH_URL:-}"
+      OPENSTACK_USERNAME: "${OPENSTACK_USERNAME:-}"
+      OPENSTACK_PASSWORD: "${OPENSTACK_PASSWORD:-}"
+      OPENSTACK_PROJECT_NAME: "${OPENSTACK_PROJECT_NAME:-}"
+      OPENSTACK_PROJECT_DOMAIN_NAME: "${OPENSTACK_PROJECT_DOMAIN_NAME:-Default}"
+      OPENSTACK_USER_DOMAIN_NAME: "${OPENSTACK_USER_DOMAIN_NAME:-Default}"
+      OPENSTACK_REGION_NAME: "${OPENSTACK_REGION_NAME:-RegionOne}"
+      OPENSTACK_DEFAULT_NETWORK_ID: "${OPENSTACK_DEFAULT_NETWORK_ID:-}"
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - api-net
+
+  worker:
+    build:
+      context: .
+      target: runtime
+    image: vm-lifecycle-api:latest
+    command: ["arq", "app.workers.main.WorkerSettings"]
+    environment:
+      REDIS_URL: "redis://redis:6379"
+      TASK_TTL_SECONDS: "${TASK_TTL_SECONDS:-86400}"
+      OPENSTACK_AUTH_URL: "${OPENSTACK_AUTH_URL:-}"
+      OPENSTACK_USERNAME: "${OPENSTACK_USERNAME:-}"
+      OPENSTACK_PASSWORD: "${OPENSTACK_PASSWORD:-}"
+      OPENSTACK_PROJECT_NAME: "${OPENSTACK_PROJECT_NAME:-}"
+      OPENSTACK_PROJECT_DOMAIN_NAME: "${OPENSTACK_PROJECT_DOMAIN_NAME:-Default}"
+      OPENSTACK_USER_DOMAIN_NAME: "${OPENSTACK_USER_DOMAIN_NAME:-Default}"
+      OPENSTACK_REGION_NAME: "${OPENSTACK_REGION_NAME:-RegionOne}"
+      OPENSTACK_DEFAULT_NETWORK_ID: "${OPENSTACK_DEFAULT_NETWORK_ID:-}"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - api-net
+
+networks:
+  api-net:
+    driver: bridge

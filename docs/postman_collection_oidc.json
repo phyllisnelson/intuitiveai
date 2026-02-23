@@ -1,0 +1,163 @@
+{
+  "info": {
+    "_postman_id": "30438d14-43d9-47e7-bf43-f1be7ff67389",
+    "name": "VM Lifecycle API \u2014 OIDC",
+    "description": "OIDC Bearer token tests for the VM Lifecycle API.\n\n**Prerequisites:**\n- Keycloak running with the `vm-api` realm configured\n- `bearer_token` set to a JWT with the `vm-reader` realm role\n- `operator_token` set to a JWT with the `vm-operator` realm role\n\nObtain tokens:\n```\nTOKEN=$(curl -s -X POST $KEYCLOAK_URL/realms/vm-api/protocol/openid-connect/token \\\n  -d 'client_id=vm-api&client_secret=...&grant_type=password&username=alice&password=...' \\\n  | jq -r .access_token)\n```",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "description": "API base URL"
+    },
+    {
+      "key": "bearer_token",
+      "value": "",
+      "description": "Keycloak JWT with vm-reader role"
+    },
+    {
+      "key": "operator_token",
+      "value": "",
+      "description": "Keycloak JWT with vm-operator role"
+    }
+  ],
+  "item": [
+    {
+      "name": "Bearer token (OIDC) - 200",
+      "description": "Operator token \u2014 GET /vms must return 200.",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Valid Bearer token is accepted', () => {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{operator_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/vms",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "vms"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Bearer token reader - POST 403",
+      "description": "Reader token \u2014 POST /vms must be rejected with 403.",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Reader role cannot create VM (403)', () => {",
+              "    pm.response.to.have.status(403);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bearer_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"test-vm\", \"flavor_id\": \"m1.small\", \"image_id\": \"img-ubuntu-2204\"}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/vms",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "vms"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Bearer token operator - POST 202",
+      "description": "Operator token \u2014 POST /vms must succeed with 202.",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Operator role can create VM (202)', () => {",
+              "    pm.response.to.have.status(202);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{operator_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"oidc-test-vm\", \"flavor_id\": \"m1.small\", \"image_id\": \"img-ubuntu-2204\"}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/vms",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "vms"
+          ]
+        }
+      }
+    }
+  ]
+}

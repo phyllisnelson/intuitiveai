@@ -1,0 +1,60 @@
+{
+  "realm": "vm-api",
+  "enabled": true,
+  "accessTokenLifespan": 300,
+  "roles": {
+    "realm": [
+      {"name": "vm-reader",   "composite": false, "clientRole": false},
+      {"name": "vm-operator", "composite": false, "clientRole": false}
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "vm-api",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "clientAuthenticatorType": "client-secret",
+      "secret": "changeme",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "firstName": "Alice",
+      "lastName": "Reader",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "alice@example.internal",
+      "requiredActions": [],
+      "credentials": [{"type": "password", "value": "changeme", "temporary": false}],
+      "realmRoles": ["vm-reader"]
+    },
+    {
+      "username": "bob",
+      "firstName": "Bob",
+      "lastName": "Operator",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "bob@example.internal",
+      "requiredActions": [],
+      "credentials": [{"type": "password", "value": "changeme", "temporary": false}],
+      "realmRoles": ["vm-operator"]
+    },
+    {
+      "username": "charlie",
+      "firstName": "Charlie",
+      "lastName": "ReadWrite",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "charlie@example.internal",
+      "requiredActions": [],
+      "credentials": [{"type": "password", "value": "changeme", "temporary": false}],
+      "realmRoles": ["vm-reader", "vm-operator"]
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install lint dependencies
+        run: uv sync --group lint
+
+      - name: black (format check)
+        run: uv run black --check app tests
+
+      - name: isort (import order check)
+        run: uv run isort --check-only app tests
+
+      - name: flake8
+        run: uv run flake8 app tests
+
+      - name: mypy
+        run: uv run mypy app
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: uv sync --group test
+
+      - name: pytest (100% coverage required)
+        run: uv run pytest

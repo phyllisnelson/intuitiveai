@@ -1,0 +1,13 @@
+[flake8]
+max-line-length = 88
+extend-ignore =
+    # Conflicts with black's slice/colon spacing
+    E203,
+    # Line break before binary operator (black-compatible)
+    W503,
+per-file-ignores =
+    # FastAPI's Depends() / Header() pattern triggers B008 intentionally
+    app/api/deps.py:B008,
+    app/api/auth.py:B008,
+    # pytest assert statements are expected
+    tests/*:S101
